@@ -1,12 +1,14 @@
 # 🔔 Raspberry Pi LDR Blink Detector with MQTT (C# / Mono)
 
-This project detects light pulses (e.g. from a blinking doorbell LED) using a **light-dependent resistor (LDR)** connected to a **GPIO pin** on a Raspberry Pi.  
+This project detects light pulses (e.g. from a blinking doorbell LED) using a **light-dependent resistor (LDR)**
+connected to a **GPIO pin** on a Raspberry Pi.  
 When a light pulse is detected, a message is sent via **MQTT**.
 
 It runs as a background service using **C# with Mono**, as .NET (Core) isn't supported on Raspberry Pi 1 / Zero (armv6).
 
 ---
 ![SKS_Doorbell_With_RPI_Zero.jpeg](documentation/SKS_Doorbell_With_RPI_Zero.jpeg)
+
 ## ⚙️ Requirements
 
 - Raspberry Pi (Zero, Zero 2 W, 3, 4, etc.)
@@ -32,10 +34,10 @@ sudo apt install mono-complete libgpiod2 libgpiod-dev
 
 ## 🔌 Hardware Wiring
 
-| LDR Pin | Raspberry Pi Pin        |
-|---------|--------------------------|
-| One side | GPIO18 (BCM) – Physical Pin 12 |
-| Other side | GND (e.g. Pin 6)          |
+| LDR Pin    | Raspberry Pi Pin               |
+|------------|--------------------------------|
+| One side   | GPIO18 (BCM) – Physical Pin 12 |
+| Other side | GND (e.g. Pin 6)               |
 
 You can use the internal pull-up resistor in software — no extra hardware required.
 
@@ -90,9 +92,69 @@ sudo mono MyApp.exe
 - You can expand this to detect longer pulses or multiple brightness levels
 
 ---
+
+# 📡 Home Assistant MQTT Auto-Discovery
+
+This application supports **Home Assistant MQTT auto-discovery**, allowing it to register itself as a binary sensor and
+appear automatically in the Home Assistant UI.
+![Homeassistant_AutoDiscovery.png](documentation/Homeassistant_AutoDiscovery.png)
+---
+
+## 🔧 Configuration Requirements
+
+To enable auto-discovery, the following section must be included in your `appsettings.json`:
+
+```json
+"MQTT": {
+"AutoDiscovery": {
+"Enabled": true,
+"Topic": "homeassistant/binary_sensor/doorbell_ldr/config",
+"ConfigPackage": {
+"name": "Doorbell LDR",
+"unique_id": "ldr_doorbell_sensor_01",
+"state_topic": "sensors/doorbell/ldr",
+"device_class": "light",
+"payload_on": "ON",
+"payload_off": "OFF",
+"availability_topic": "sensors/doorbell/ldr/available",
+"device": {
+"identifiers": ["ldr_doorbell_device_01"],
+"name": "Raspberry Pi LDR Sensor",
+"manufacturer": "Custom",
+"model": "Pi-LDR-MQTT",
+"sw_version": "1.0.0"
+}
+}
+}
+}
+```
+
+---
+
+## 🚀 When is the discovery config sent?
+
+The discovery config is sent:
+
+- On MQTT connection or reconnection
+- If `AutoDiscovery:Enabled` is `true`
+- With the `retain` flag so Home Assistant keeps it even after restarts
+
+---
+
+## 📬 Sensor State Updates
+
+This service publishes to:
+
+- `sensors/doorbell/ldr` with payload:
+    - `"ON"` when a light impulse is detected
+    - `"OFF"` when the light is no longer detected (optional or after timeout)
+
+---
+
 # 🧰 Running as a systemd Service (Root)
 
-To automatically start the LDR blink detector on boot and keep it running in the background, you can install it as a `systemd` service.
+To automatically start the LDR blink detector on boot and keep it running in the background, you can install it as a
+`systemd` service.
 
 ---
 
@@ -108,20 +170,20 @@ Paste the following content:
 
 ```ini
 [Unit]
-Description=Raspberry Pi LDR Blink Detector (.NET/Mono)
-After=network.target
+Description = Raspberry Pi LDR Blink Detector (.NET/Mono)
+After = network.target
 
 [Service]
-Type=simple
-ExecStart=/usr/bin/mono /root/RaspiLDR2MQTT/RaspiLDR2MQTT.exe
-WorkingDirectory=/root/RaspiLDR2MQTT
-Restart=on-failure
-RestartSec=5
-User=root
-Environment=DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1
+Type = simple
+ExecStart = /usr/bin/mono /root/RaspiLDR2MQTT/RaspiLDR2MQTT.exe
+WorkingDirectory = /root/RaspiLDR2MQTT
+Restart = on-failure
+RestartSec = 5
+User = root
+Environment = DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1
 
 [Install]
-WantedBy=multi-user.target
+WantedBy = multi-user.target
 ```
 
 > Make sure the path to the `.exe` and working directory is correct.
@@ -160,5 +222,6 @@ sudo systemctl disable ldr-service.service
 MIT – free to use and modify.
 
 ## 🙏 Acknowledgements
+
 - ChatGPT for the README.md generation
 - Awesome Raspi Pinout at https://pinout.xyz/
