@@ -33,6 +33,7 @@ public class LdrService(ILogger<LdrService> logger, IConfiguration configuration
 
     private async Task MonitorLoop(CancellationToken token)
     {
+        await mqttService.SendToHassAsync("off");
         logger.LogInformation("Monitoring GPIO pin {Pin}", this.Pin);
 
         bool lastState = false;
@@ -45,7 +46,7 @@ public class LdrService(ILogger<LdrService> logger, IConfiguration configuration
             {
                 lastState = currentState;
                 logger.LogInformation("Change to {State} detected at {Time}", currentState, DateTime.Now);
-                await mqttService.SendToHassAsync(lastState ? "ON" : "OFF");
+                await mqttService.SendToHassAsync(lastState ? "on" : "off");
             }
 
             await Task.Delay(250, token); // Poll interval

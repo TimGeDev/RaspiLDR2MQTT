@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.Extensions.Configuration;
 
 namespace RaspiLDR2MQTT;
@@ -9,9 +10,11 @@ using MQTTnet;
 using MQTTnet.Client;
 using Newtonsoft.Json.Linq;
 
-public class MQTTService : IDisposable
+public class MQTTService : IAsyncDisposable
 {
     private readonly ILogger<MQTTService> logger;
+
+    private readonly IConfiguration Configuration;
 
     private readonly IMqttClient mqttClient;
 
@@ -25,6 +28,7 @@ public class MQTTService : IDisposable
         var mqttFactory = new MqttFactory();
         this.mqttClient = mqttFactory.CreateMqttClient();
 
+        this.Configuration = configuration;
         var mqttConfig = configuration.GetSection("MQTT");
 
         this.TOPIC = mqttConfig.GetValue<string>("Topic");
@@ -32,25 +36,33 @@ public class MQTTService : IDisposable
         this.mqttClientOptions = new MqttClientOptionsBuilder()
             .WithTcpServer(mqttConfig.GetValue<string>("Server"), mqttConfig.GetValue<int>("Port"))
             .WithClientId(mqttConfig.GetValue<string>("ClientId"))
-            .WithCredentials(mqttConfig.GetValue<string>("User"), mqttConfig.GetValue<string>("Value"))
+            .WithCredentials(mqttConfig.GetValue<string>("User"), mqttConfig.GetValue<string>("Password"))
             .Build();
     }
 
-    private void Connect()
+    private async Task Connect()
     {
-        this.mqttClient.ConnectAsync(this.mqttClientOptions, CancellationToken.None);
+        await this.mqttClient.ConnectAsync(this.mqttClientOptions, CancellationToken.None);
+
+        if (this.Configuration.GetSection("AutoDiscovery").GetValue<bool>("Enabled"))
+        {
+            // Always send autodiscovery on (re-)connect
+            await this.SendAutodiscovery();
+        }
     }
 
-    private void Disconnect()
+    private async Task Disconnect()
     {
-        this.mqttClient.DisconnectAsync();
+        await this.mqttClient.DisconnectAsync();
     }
 
     public async Task SendToHassAsync(string payload)
     {
         if (!this.mqttClient.IsConnected)
         {
-            this.Connect();
+            this.logger.LogInformation("Not connected, trying to connect to mqtt...");
+            await this.Connect();
+            this.logger.LogInformation("Connected to mqtt");
         }
 
         var applicationMessage = new MqttApplicationMessageBuilder()
@@ -60,11 +72,49 @@ public class MQTTService : IDisposable
 
         await this.mqttClient.PublishAsync(applicationMessage, CancellationToken.None);
 
-        this.logger.LogInformation("Published: " + payload);
+        this.logger.LogInformation("Published paylout: {Payload}", payload);
     }
 
-    public void Dispose()
+    private async Task SendAutodiscovery()
     {
-        this.Disconnect();
+        var autoDiscoveryConfig = this.Configuration.GetSection("AutoDiscovery");
+
+        var configPackage = this.GetSectionAsObject(autoDiscoveryConfig.GetSection("ConfigPackage"));
+
+        var json = JsonSerializer.Serialize(configPackage);
+        await this.mqttClient.PublishAsync(new MqttApplicationMessageBuilder()
+            .WithTopic(autoDiscoveryConfig.GetSection("Topic").Value)
+            .WithPayload(json)
+            .WithRetainFlag(true)
+            .Build());
+        this.logger.LogInformation("Published autodiscovery: {Json}", json);
+    }
+
+    object GetSectionAsObject(IConfigurationSection section)
+    {
+        var children = section.GetChildren();
+
+        if (!children.Any())
+            return section.Value;
+
+        // Handle arrays
+        if (children.All(c => int.TryParse(c.Key, out _)))
+        {
+            return children.Select(this.GetSectionAsObject).ToList();
+        }
+
+        // Handle nested objects
+        var dict = new Dictionary<string, object>();
+        foreach (var child in children)
+        {
+            dict[child.Key] = this.GetSectionAsObject(child);
+        }
+
+        return dict;
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        await this.Disconnect();
     }
 }
