@@ -1,0 +1,27 @@
+name: Build Mono Project
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+
+    - name: Set up .NET Framework (mono)
+      run: sudo apt update && sudo apt install -y mono-complete
+
+    - name: Restore NuGet packages
+      run: |
+        mozroots --import --sync
+        nuget restore
+
+    - name: Build with xbuild
+      run: |
+        xbuild /p:Configuration=Release
